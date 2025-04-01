@@ -44,8 +44,5 @@ def get_status():
     return response
 
 if __name__ == "__main__":
-    # ✅ Start monitor.py automatically
-    subprocess.Popen(["python", "monitor.py"])
-
-    # ✅ Start Flask API
+        # ✅ Start Flask API
     app.run(host='0.0.0.0', port=5000, debug=True)
