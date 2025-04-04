@@ -21,7 +21,7 @@ jobs:
 
       - name: Deploy to S3
         run: |
-          aws s3 sync . s3://myfrontend-bucket --delete \
+          aws s3 sync . s3://myfrontend-bucket43 --delete \
           --exclude ".git/*" \
           --exclude ".github/*" \
           --exclude "README.md"
