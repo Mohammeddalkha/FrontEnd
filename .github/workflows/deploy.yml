@@ -1,9 +1,7 @@
 name: Deploy Frontend to S3
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:  # 👈 Manual trigger only from GitHub UI
 
 jobs:
   deploy:
@@ -17,7 +15,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1  # Update if your AWS region is different
+          aws-region: ap-south-1  # Change if your region is different
 
       - name: Deploy to S3
         run: |
