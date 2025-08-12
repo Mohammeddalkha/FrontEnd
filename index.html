@@ -115,10 +115,10 @@
 </div>
 
 <script>
-const API_URL = 'https://url-monitor-func-fpekcgfmbvfubgf7.centralindia-01.azurewebsites.net/api/get_downtime'; // change later for prod
+const API_URL = 'https://dalkha.site:5000/get_status';
 
-function fetchTodayData() {
-    fetchData(true);
+async function fetchTodayData() {
+    fetchData('?today=true');
 }
 
 function fetchAllData() {
