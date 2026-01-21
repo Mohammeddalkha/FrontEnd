@@ -115,44 +115,57 @@
 </div>
 
 <script>
-const API_URL = 'https://206wgrtbl3.execute-api.ap-south-1.amazonaws.com/dev/get_status';
+const API_URL = 'https://url-monitor-func-fpekcgfmbvfubgf7.centralindia-01.azurewebsites.net/api/get_downtime'; // change later for prod
 
-async function fetchTodayData() {
-    fetchData('?today=true');
+function fetchTodayData() {
+    fetchData(true);
 }
 
-async function fetchAllData() {
-    fetchData('?history=true');
+function fetchAllData() {
+    fetchData(false);
 }
 
-async function fetchData(params) {
+async function fetchData(todayOnly) {
     try {
-        const response = await fetch(API_URL + params, {
+        let url = API_URL;
+
+        if (todayOnly) {
+            url += '?today=true';
+        }
+
+        const response = await fetch(url, {
             headers: { 'Accept': 'application/json' }
         });
-        if (!response.ok) throw new Error('Failed to fetch data.');
+
+        if (!response.ok) throw new Error('Failed to fetch data');
 
         const data = await response.json();
-        populateTable(data);
+        populateTable(data, todayOnly);
+
     } catch (error) {
         console.error('Fetch Error:', error);
-        alert('Failed to fetch data. Please check your API.');
+        alert('Failed to fetch data. Check backend.');
     }
 }
 
-function populateTable(data) {
+function populateTable(data, todayOnly) {
     const tableBody = document.getElementById('tableBody');
     tableBody.innerHTML = '';
 
-    if (data.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="4">No server was down</td></tr>';
+    if (!data || data.length === 0) {
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="4">
+                    ${todayOnly ? 'No server was down today' : 'No downtime history found'}
+                </td>
+            </tr>`;
         return;
     }
 
     data.forEach(row => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td>${row.timestamp.replace(' GMT', '')}</td>
+            <td>${row.timestamp}</td>
             <td>${row.url}</td>
             <td>${row.call_initiated}</td>
             <td>${row.recipient}</td>
@@ -161,8 +174,8 @@ function populateTable(data) {
     });
 }
 
+// Load TODAY by default
 window.onload = fetchTodayData;
 </script>
-
 </body>
 </html>
