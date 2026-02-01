@@ -3,183 +3,208 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Server Downtime Logs</title>
+    <title>ServerWatch Pro - Downtime Monitoring</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            background: linear-gradient(135deg, #f0f4f8, #d9e2ec);
-            margin: 0;
-            padding: 20px;
-        }
-        .container {
-            max-width: 90%;
-            margin: auto;
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-            animation: fadeIn 0.8s ease-in-out;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        h2 {
-            color: #333;
-        }
-        .btn-container {
-            margin-bottom: 20px;
-        }
-        button {
-            padding: 10px 20px;
-            margin: 5px;
-            border: none;
-            cursor: pointer;
-            background: #28a745;
-            color: white;
-            border-radius: 5px;
-            font-size: 16px;
-            transition: transform 0.3s, background 0.3s;
-        }
-        button:hover {
-            background: #218838;
-            transform: scale(1.05);
-        }
-        .table-wrapper {
-            overflow-x: auto;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-            background: white;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 10px;
-            text-align: center;
-        }
-        th {
-            background-color: #333;
-            color: white;
-        }
-        tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
-        tr:hover {
-            background-color: #e0e0e0;
-            transition: background 0.3s;
-        }
-        @media (max-width: 768px) {
-            .table-wrapper {
-                overflow-x: auto;
-            }
-            table {
-                width: 100%;
-                display: block;
-                overflow-x: auto;
-                white-space: nowrap;
-            }
-            th, td {
-                padding: 8px;
-            }
-        }
-    </style>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- jsPDF for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    <!-- External CSS -->
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
-<div class="container">
-    <h2>Server Downtime Logs</h2>
-    <div class="btn-container">
-        <button onclick="fetchTodayData()">TODAY</button>
-        <button onclick="fetchAllData()">HISTORY</button>
+    <!-- API STATUS INDICATOR -->
+    <div class="api-status" id="apiStatus">
+        <i class="fas fa-circle"></i>
+        <span>Connecting to API...</span>
     </div>
-    <div class="table-wrapper">
-        <table>
-            <thead>
-                <tr>
-                    <th>Date & Time (IST)</th>
-                    <th>URL Down</th>
-                    <th>Call Initiated</th>
-                    <th>Recipient</th>
-                </tr>
-            </thead>
-            <tbody id="tableBody">
-                <!-- Data will be inserted here -->
-            </tbody>
-        </table>
+    
+    <div class="container">
+        <!-- HEADER -->
+        <header class="header">
+            <div class="logo">
+                <div class="logo-icon">
+                    <i class="fas fa-server"></i>
+                </div>
+                <div class="logo-text">
+                    <h1>ServerWatch Pro</h1>
+                    <p>Real-time Server Monitoring Dashboard</p>
+                </div>
+            </div>
+            <div class="controls">
+                <button class="btn btn-primary" id="todayBtn" onclick="fetchTodayData()">
+                    <i class="fas fa-calendar-day"></i> Today
+                </button>
+                <button class="btn btn-outline" id="allBtn" onclick="fetchAllData()">
+                    <i class="fas fa-history"></i> All History
+                </button>
+                <button class="btn btn-outline" onclick="refreshData()">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+        </header>
+        
+        <!-- STATS GRID -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon icon-uptime">
+                    <i class="fas fa-chart-line"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="uptimePercent">--%</h3>
+                    <p>System Uptime</p>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon icon-incidents">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="todayIncidents">--</h3>
+                    <p>Incidents Today</p>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon icon-response">
+                    <i class="fas fa-bolt"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="avgResponse">--ms</h3>
+                    <p>Avg Response Time</p>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon icon-alerts">
+                    <i class="fas fa-bell"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="alertsSent">--</h3>
+                    <p>Alerts Sent</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- QUICK ACTIONS -->
+        <div class="quick-actions">
+            <div class="action-card" onclick="testAllServers()">
+                <div class="action-icon">
+                    <i class="fas fa-heartbeat"></i>
+                </div>
+                <h3>Health Check</h3>
+                <p>Run comprehensive check on all monitored servers</p>
+                <button class="action-btn">
+                    <i class="fas fa-play"></i> Run Now
+                </button>
+            </div>
+            
+            <div class="action-card" onclick="generateReport()">
+                <div class="action-icon">
+                    <i class="fas fa-file-pdf"></i>
+                </div>
+                <h3>Generate Report</h3>
+                <p>Create detailed uptime report for stakeholders</p>
+                <button class="action-btn">
+                    <i class="fas fa-download"></i> Download PDF
+                </button>
+            </div>
+            
+            <div class="action-card" onclick="openWhatsAppModal()">
+                <div class="action-icon" style="background: linear-gradient(135deg, #25D366, #128C7E);">
+                    <i class="fab fa-whatsapp"></i>
+                </div>
+                <h3>Quick Support</h3>
+                <p>Message the admin for immediate assistance</p>
+                <button class="action-btn" style="background: #dcf8c6; color: #128C7E;">
+                    <i class="fas fa-comment"></i> Chat Now
+                </button>
+            </div>
+        </div>
+        
+        <!-- MAIN TABLE -->
+        <div class="main-card">
+            <div class="card-header">
+                <h2><i class="fas fa-history"></i> Recent Downtime Incidents</h2>
+                <div class="controls">
+                    <button class="btn btn-outline" onclick="exportCSV()">
+                        <i class="fas fa-file-export"></i> Export
+                    </button>
+                    <button class="btn btn-outline" onclick="clearFilters()">
+                        <i class="fas fa-filter"></i> Clear Filters
+                    </button>
+                </div>
+            </div>
+            <div class="table-container">
+                <table class="downtime-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Service</th>
+                            <th>Status</th>
+                            <th>Duration</th>
+                            <th>Alert Sent</th>
+                            <th>Recipient</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                        <!-- Data will load here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
-</div>
+    
+    <!-- WHATSAPP FLOATING BUTTON -->
+    <div class="whatsapp-float">
+        <div class="whatsapp-button" onclick="openWhatsAppModal()">
+            <i class="fab fa-whatsapp"></i>
+        </div>
+    </div>
+    
+    <!-- WHATSAPP CHAT MODAL -->
+    <div class="whatsapp-modal" id="whatsappModal">
+        <button class="close-modal" onclick="closeWhatsAppModal()">
+            <i class="fas fa-times"></i>
+        </button>
+        <div class="whatsapp-header">
+            <div class="whatsapp-avatar">
+                <i class="fas fa-user-tie"></i>
+            </div>
+            <div class="whatsapp-info">
+                <h3>Server Admin</h3>
+                <p>Typically replies instantly</p>
+            </div>
+        </div>
+        <div class="whatsapp-body" id="whatsappMessages">
+            <!-- Messages appear here -->
+            <div class="whatsapp-message message-incoming">
+                Hi! I'm your server admin. How can I help you today?
+            </div>
+            <div class="whatsapp-message message-incoming">
+                You can ask me about:
+                • Server status
+                • Recent incidents  
+                • Adding new services
+                • Alert settings
+            </div>
+        </div>
+        <div class="whatsapp-input-container">
+            <input type="text" class="whatsapp-input" id="whatsappInput" 
+                   placeholder="Type your message..." 
+                   onkeypress="handleWhatsAppKeyPress(event)">
+            <button class="whatsapp-send-btn" onclick="sendWhatsAppMessage()">
+                <i class="fas fa-paper-plane"></i>
+            </button>
+        </div>
+    </div>
 
-<script>
-<<<<<<< HEAD
-const API_URL = 'https://dalkha.site:5000/get_status';
-=======
-const API_URL = 'https://status.dalkha.site/get_status';
->>>>>>> 1a68d24 (Update index.html)
-
-async function fetchTodayData() {
-    fetchData('?today=true');
-}
-
-function fetchAllData() {
-    fetchData(false);
-}
-
-async function fetchData(todayOnly) {
-    try {
-        let url = API_URL;
-
-        if (todayOnly) {
-            url += '?today=true';
-        }
-
-        const response = await fetch(url, {
-            headers: { 'Accept': 'application/json' }
-        });
-
-        if (!response.ok) throw new Error('Failed to fetch data');
-
-        const data = await response.json();
-        populateTable(data, todayOnly);
-
-    } catch (error) {
-        console.error('Fetch Error:', error);
-        alert('Failed to fetch data. Check backend.');
-    }
-}
-
-function populateTable(data, todayOnly) {
-    const tableBody = document.getElementById('tableBody');
-    tableBody.innerHTML = '';
-
-    if (!data || data.length === 0) {
-        tableBody.innerHTML = `
-            <tr>
-                <td colspan="4">
-                    ${todayOnly ? 'No server was down today' : 'No downtime history found'}
-                </td>
-            </tr>`;
-        return;
-    }
-
-    data.forEach(row => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${row.timestamp}</td>
-            <td>${row.url}</td>
-            <td>${row.call_initiated}</td>
-            <td>${row.recipient}</td>
-        `;
-        tableBody.appendChild(tr);
-    });
-}
-
-// Load TODAY by default
-window.onload = fetchTodayData;
-</script>
+    <!-- External JavaScript -->
+    <script src="script.js"></script>
 </body>
 </html>
