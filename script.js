@@ -518,17 +518,20 @@ function generateAutoReply(message) {
 }
 
 function openActualWhatsApp() {
+
     const defaultMessage = `Hi ${YOUR_NAME}, I need help with server monitoring. Current status: ${document.getElementById('uptimePercent').textContent} uptime, ${document.getElementById('todayIncidents').textContent} incidents today.`;
+
     const whatsappUrl = `https://wa.me/${YOUR_PHONE_NUMBER}?text=${encodeURIComponent(defaultMessage)}`;
-    window.open(whatsappUrl, '_blank');
-    
+
+    // ✅ Works on Mobile + Desktop
+    window.location.href = whatsappUrl;
+
     whatsAppMessages.push({
         sender: 'system',
-        text: `📱 I've opened WhatsApp for you. Please continue the conversation there.`,
+        text: `📱 Opening WhatsApp...`,
         time: new Date()
     });
-    
-    updateWhatsAppUI();
+
     localStorage.setItem('whatsapp_chat', JSON.stringify(whatsAppMessages));
 }
 
