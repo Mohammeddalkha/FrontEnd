@@ -35,13 +35,13 @@
                 </div>
             </div>
             <div class="controls">
-                <button class="btn btn-primary" id="todayBtn" onclick="fetchTodayData()">
+                <button class="btn btn-primary" id="todayBtn">
                     <i class="fas fa-calendar-day"></i> Today
                 </button>
-                <button class="btn btn-outline" id="allBtn" onclick="fetchAllData()">
+                <button class="btn btn-outline" id="allBtn">
                     <i class="fas fa-history"></i> All History
                 </button>
-                <button class="btn btn-outline" onclick="refreshData()">
+                <button class="btn btn-outline" id="refreshBtn">
                     <i class="fas fa-sync-alt"></i> Refresh
                 </button>
             </div>
@@ -90,9 +90,40 @@
             </div>
         </div>
         
+        <!-- URL MANAGEMENT SECTION -->
+        <div class="main-card">
+            <div class="card-header">
+                <h2><i class="fas fa-link"></i> Monitor URLs</h2>
+                <div class="controls">
+                    <button class="btn btn-primary" id="addUrlBtn">
+                        <i class="fas fa-plus"></i> Add URL
+                    </button>
+                    <button class="btn btn-outline" id="refreshUrlsBtn">
+                        <i class="fas fa-sync-alt"></i> Refresh Status
+                    </button>
+                </div>
+            </div>
+            <div class="table-container">
+                <table class="downtime-table">
+                    <thead>
+                        <tr>
+                            <th>URL</th>
+                            <th>Status</th>
+                            <th>Last Checked</th>
+                            <th>Uptime</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="urlListBody">
+                        <!-- URL list will load here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
         <!-- QUICK ACTIONS -->
         <div class="quick-actions">
-            <div class="action-card" onclick="testAllServers()">
+            <div class="action-card" id="healthCheckBtn">
                 <div class="action-icon">
                     <i class="fas fa-heartbeat"></i>
                 </div>
@@ -103,7 +134,7 @@
                 </button>
             </div>
             
-            <div class="action-card" onclick="generateReport()">
+            <div class="action-card" id="generateReportBtn">
                 <div class="action-icon">
                     <i class="fas fa-file-pdf"></i>
                 </div>
@@ -114,7 +145,7 @@
                 </button>
             </div>
             
-            <div class="action-card" onclick="openWhatsAppModal()">
+            <div class="action-card" id="whatsappSupportBtn">
                 <div class="action-icon" style="background: linear-gradient(135deg, #25D366, #128C7E);">
                     <i class="fab fa-whatsapp"></i>
                 </div>
@@ -131,10 +162,10 @@
             <div class="card-header">
                 <h2><i class="fas fa-history"></i> Recent Downtime Incidents</h2>
                 <div class="controls">
-                    <button class="btn btn-outline" onclick="exportCSV()">
+                    <button class="btn btn-outline" id="exportCSVBtn">
                         <i class="fas fa-file-export"></i> Export
                     </button>
-                    <button class="btn btn-outline" onclick="clearFilters()">
+                    <button class="btn btn-outline" id="clearFiltersBtn">
                         <i class="fas fa-filter"></i> Clear Filters
                     </button>
                 </div>
@@ -160,16 +191,135 @@
         </div>
     </div>
     
+<!-- ADD URL MODAL -->
+<div class="modal" id="addUrlModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-plus"></i> Add URL to Monitor</h3>
+            <button class="close-modal" id="closeAddUrlModalBtn">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="urlInput">URL to Monitor</label>
+                <input type="text" id="urlInput" placeholder="https://example.com" class="form-input">
+                <small class="form-help">Enter the full URL including http:// or https://</small>
+            </div>
+            <div class="form-group">
+                <label for="urlName">Display Name (Optional)</label>
+                <input type="text" id="urlName" placeholder="My API Server" class="form-input">
+                <small class="form-help">A friendly name for this URL</small>
+            </div>
+            <!-- FIXED 5 MINUTE INTERVAL -->
+            <div class="form-group">
+                <label>Check Interval</label>
+                <div class="fixed-interval-display">
+                    <i class="fas fa-clock"></i> Every 5 minutes (Fixed for all URLs)
+                </div>
+                <small class="form-help">All URLs are checked every 5 minutes</small>
+            </div>
+            <div class="form-group">
+                <label for="alertEmail">Alert Email (Optional)</label>
+                <input type="email" id="alertEmail" placeholder="admin@example.com" class="form-input">
+                <small class="form-help">Email to receive downtime alerts</small>
+            </div>
+            <div class="form-group">
+                <label for="alertWhatsapp">WhatsApp Number (Optional)</label>
+                <input type="tel" id="alertWhatsapp" placeholder="+1234567890" class="form-input">
+                <small class="form-help">WhatsApp number for downtime alerts</small>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" id="cancelAddUrlBtn">Cancel</button>
+            <button class="btn btn-primary" id="addUrlSubmitBtn">Add URL</button>
+        </div>
+    </div>
+</div>
+    
+<!-- EDIT URL MODAL (ACTIVE TOGGLE REMOVED) -->
+<div class="modal" id="editUrlModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-edit"></i> Edit URL</h3>
+            <button class="close-modal" id="closeEditUrlModalBtn">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="editUrlInput">URL to Monitor</label>
+                <input type="text" id="editUrlInput" placeholder="https://example.com" class="form-input">
+                <small class="form-help">Enter the full URL including http:// or https://</small>
+            </div>
+            <div class="form-group">
+                <label for="editUrlName">Display Name (Optional)</label>
+                <input type="text" id="editUrlName" placeholder="My API Server" class="form-input">
+                <small class="form-help">A friendly name for this URL</small>
+            </div>
+            
+            <!-- REMOVED: Monitoring Status Toggle -->
+            
+            <!-- FIXED 5 MINUTE INTERVAL -->
+            <div class="form-group">
+                <label>Check Interval</label>
+                <div class="fixed-interval-display">
+                    <i class="fas fa-clock"></i> Every 5 minutes (Fixed for all URLs)
+                </div>
+                <small class="form-help">All URLs are checked every 5 minutes</small>
+            </div>
+            <div class="form-group">
+                <label for="editAlertEmail">Alert Email (Optional)</label>
+                <input type="email" id="editAlertEmail" placeholder="admin@example.com" class="form-input">
+                <small class="form-help">Email to receive downtime alerts</small>
+            </div>
+            <div class="form-group">
+                <label for="editAlertWhatsapp">WhatsApp Number (Optional)</label>
+                <input type="tel" id="editAlertWhatsapp" placeholder="+1234567890" class="form-input">
+                <small class="form-help">WhatsApp number for downtime alerts</small>
+            </div>
+            <input type="hidden" id="editUrlId">
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" id="cancelEditUrlBtn">Cancel</button>
+            <button class="btn btn-primary" id="saveUrlChangesBtn">Save Changes</button>
+        </div>
+    </div>
+</div>
+    
+    <!-- DELETE CONFIRMATION MODAL -->
+    <div class="modal" id="deleteUrlModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-trash"></i> Delete URL</h3>
+                <button class="close-modal" id="closeDeleteUrlModalBtn">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to remove this URL from monitoring?</p>
+                <p id="deleteUrlText" style="font-weight: 500; margin-top: 10px;"></p>
+                <input type="hidden" id="deleteUrlId">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" id="cancelDeleteUrlBtn">Cancel</button>
+                <button class="btn btn-danger" id="confirmDeleteUrlBtn">
+                    <i class="fas fa-trash"></i> Delete
+                </button>
+            </div>
+        </div>
+    </div>
+    
     <!-- WHATSAPP FLOATING BUTTON -->
     <div class="whatsapp-float">
-        <div class="whatsapp-button" onclick="openWhatsAppModal()">
+        <div class="whatsapp-button" id="whatsappFloatBtn">
             <i class="fab fa-whatsapp"></i>
         </div>
     </div>
     
     <!-- WHATSAPP CHAT MODAL -->
     <div class="whatsapp-modal" id="whatsappModal">
-        <button class="close-modal" onclick="closeWhatsAppModal()">
+        <button class="close-modal" id="closeWhatsAppModalBtn">
             <i class="fas fa-times"></i>
         </button>
         <div class="whatsapp-header">
@@ -196,9 +346,8 @@
         </div>
         <div class="whatsapp-input-container">
             <input type="text" class="whatsapp-input" id="whatsappInput" 
-                   placeholder="Type your message..." 
-                   onkeypress="handleWhatsAppKeyPress(event)">
-            <button class="whatsapp-send-btn" onclick="sendWhatsAppMessage()">
+                   placeholder="Type your message...">
+            <button class="whatsapp-send-btn" id="whatsappSendBtn">
                 <i class="fas fa-paper-plane"></i>
             </button>
         </div>
