@@ -2,11 +2,29 @@
 // CONFIGURATION AND STATE
 // ============================================
 
-// API Configuration
-const API_BASE_URL = 'https://url-monitor-func-fpekcgfmbvfubgf7.centralindia-01.azurewebsites.net/api';
+const getApiBaseUrl = () => {
+    const params = new URLSearchParams(window.location.search);
+    const useLocal = params.get("local");
+    const useProd = params.get("prod");
+
+    // If explicitly requested prod API via URL, or not local/127.0.0.1, use prod.
+    if (useProd === 'true' || (!useLocal && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')) {
+        return 'https://url-monitor-func-fpekcgfmbvfubgf7.centralindia-01.azurewebsites.net/api';
+    }
+
+    // Otherwise, if running locally or ?local=true, use local API
+    if (useLocal === 'true' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        return 'http://localhost:7071/api';
+    }
+
+    return 'https://url-monitor-func-fpekcgfmbvfubgf7.centralindia-01.azurewebsites.net/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 const API_URL = `${API_BASE_URL}/get_downtime`;
 const YOUR_PHONE_NUMBER = '918300521700';
 const YOUR_NAME = 'Server Admin';
+let performanceChart = null;
 
 // Original State
 let currentData = [];
@@ -32,6 +50,7 @@ let urlStatusRefreshInterval = null;
 const todayBtn = document.getElementById('todayBtn');
 const allBtn = document.getElementById('allBtn');
 const refreshBtn = document.getElementById('refreshBtn');
+const themeToggleBtn = document.getElementById('themeToggleBtn');
 const addUrlBtn = document.getElementById('addUrlBtn');
 const refreshUrlsBtn = document.getElementById('refreshUrlsBtn');
 const healthCheckBtn = document.getElementById('healthCheckBtn');
@@ -92,62 +111,64 @@ async function fetchData(todayOnly = true) {
     try {
         showLoading(true);
         updateApiStatus('connecting');
-        
+
         console.log(`Fetching ${todayOnly ? 'today\'s' : 'all'} data from API...`);
-        
+
         const url = API_URL;
-        
+
         console.log('API URL:', url);
-        
+
         const response = await fetch(url, {
-            headers: { 
+            headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json'
             }
         });
-        
+
         console.log('API Response status:', response.status);
-        
+
         if (!response.ok) {
             throw new Error(`API Error: ${response.status} ${response.statusText}`);
         }
-        
+
         const data = await response.json();
         console.log('API Data received:', data);
-        
-        // Process data from monitorlogs table
+
         if (data && Array.isArray(data)) {
             currentData = data;
-            
+
+            // Render performance chart if we have data
+            renderPerformanceChart(data);
+
             if (todayOnly) {
                 const now = new Date();
                 const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                
+
                 currentData = data.filter(item => {
                     try {
                         const timestamp = item.timestamp;
                         if (!timestamp) return false;
-                        
+
                         let date;
                         if (timestamp.includes('AM') || timestamp.includes('PM')) {
                             const [datePart, timePart, period] = timestamp.split(' ');
                             if (!datePart || !timePart || !period) return false;
-                            
+
                             const [hours, minutes, seconds] = timePart.split(':').map(Number);
-                            
+
                             let hours24 = hours;
                             if (period === 'PM' && hours < 12) {
                                 hours24 = hours + 12;
                             } else if (period === 'AM' && hours === 12) {
                                 hours24 = 0;
                             }
-                            
+
                             const isoString = `${datePart}T${hours24.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
                             date = new Date(isoString);
                         } else {
                             date = new Date(timestamp);
                         }
-                        
+
                         return date >= todayStart;
                     } catch (error) {
                         console.error('Error filtering today data:', error);
@@ -159,23 +180,23 @@ async function fetchData(todayOnly = true) {
         } else {
             currentData = [];
         }
-        
+
         console.log('Processed data:', currentData);
-        
+
         populateTable(currentData);
         updateStats(currentData);
         updateApiStatus('connected');
-        
+
         updateButtonStates(todayOnly);
         isTodayMode = todayOnly;
-        
+
         showToast(`Loaded ${currentData.length} records from monitorlogs`);
-        
+
     } catch (error) {
         console.error('Fetch error:', error);
         updateApiStatus('error');
         showError(`Failed to load data: ${error.message}. Using sample data as fallback.`);
-        
+
         loadSampleData();
     } finally {
         showLoading(false);
@@ -207,17 +228,20 @@ function initializeEventListeners() {
     todayBtn.addEventListener('click', fetchTodayData);
     allBtn.addEventListener('click', fetchAllData);
     refreshBtn.addEventListener('click', refreshData);
+    if (themeToggleBtn) {
+        themeToggleBtn.addEventListener('click', toggleTheme);
+    }
     healthCheckBtn.addEventListener('click', testAllServers);
     generateReportBtn.addEventListener('click', generateReport);
     whatsappSupportBtn.addEventListener('click', openWhatsAppModal);
     whatsappFloatBtn.addEventListener('click', openWhatsAppModal);
     exportCSVBtn.addEventListener('click', exportCSV);
     clearFiltersBtn.addEventListener('click', clearFilters);
-    
+
     // URL management buttons
     addUrlBtn.addEventListener('click', openAddUrlModal);
     refreshUrlsBtn.addEventListener('click', refreshAllUrls);
-    
+
     // Modal buttons
     closeAddUrlModalBtn.addEventListener('click', closeAddUrlModal);
     cancelAddUrlBtn.addEventListener('click', closeAddUrlModal);
@@ -230,7 +254,7 @@ function initializeEventListeners() {
     confirmDeleteUrlBtn.addEventListener('click', confirmDeleteUrl);
     closeWhatsAppModalBtn.addEventListener('click', closeWhatsAppModal);
     whatsappSendBtn.addEventListener('click', sendWhatsAppMessage);
-    
+
     // Input events
     whatsappInput.addEventListener('keypress', handleWhatsAppKeyPress);
 }
@@ -239,26 +263,150 @@ function initializeEventListeners() {
 // INITIALIZATION
 // ============================================
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     // Clear any cached URL data on page load
     localStorage.removeItem('monitored_urls');
+
+    // Apply saved theme preference
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    applyTheme(savedTheme);
     initializeEventListeners();
     updateApiStatus('connecting');
     fetchTodayData();
-    
+
     // Load saved messages from localStorage
     const savedMessages = localStorage.getItem('whatsapp_chat');
     if (savedMessages) {
         whatsAppMessages = JSON.parse(savedMessages);
         updateWhatsAppUI();
     }
-    
+
     // Initialize URL management
     initializeUrlManagement();
-    
+
+    // Initial chart placeholder
+    initChart();
+
     // Start refreshing URL statuses every 30 seconds
     startUrlStatusRefresher();
 });
+
+// ============================================
+// PERFORMANCE CHART (CHART.JS)
+// ============================================
+
+function initChart() {
+    const ctx = document.getElementById('performanceChart')?.getContext('2d');
+    if (!ctx) return;
+
+    const isDark = document.body.classList.contains('dark');
+    const gridColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)';
+    const textColor = isDark ? '#94a3b8' : '#64748b';
+
+    performanceChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Response Time (ms)',
+                data: [],
+                borderColor: '#6366f1',
+                backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.4,
+                pointRadius: 0,
+                pointHitRadius: 10
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    backgroundColor: isDark ? '#1e293b' : '#fff',
+                    titleColor: isDark ? '#f8fafc' : '#1e293b',
+                    bodyColor: isDark ? '#cbd5e1' : '#64748b',
+                    borderColor: isDark ? '#334155' : '#e2e8f0',
+                    borderWidth: 1,
+                    padding: 12,
+                    displayColors: false
+                }
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { color: textColor, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: gridColor },
+                    ticks: { color: textColor, stepSize: 100 }
+                }
+            }
+        }
+    });
+}
+
+function renderPerformanceChart(data) {
+    if (!performanceChart || !data || data.length === 0) return;
+
+    // Filter logs that have response time and status UP
+    const upLogs = data
+        .filter(log => log.status === 'UP' && log.response_time)
+        .sort((a, b) => {
+            const dateA = parseTimestamp(a.timestamp) || new Date(0);
+            const dateB = parseTimestamp(b.timestamp) || new Date(0);
+            return dateA - dateB;
+        });
+
+    // Limit to last 50 data points for better visibility
+    const displayLogs = upLogs.slice(-50);
+
+    const labels = displayLogs.map(log => {
+        const date = parseTimestamp(log.timestamp);
+        return date ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    });
+
+    const values = displayLogs.map(log => log.response_time);
+
+    performanceChart.data.labels = labels;
+    performanceChart.data.datasets[0].data = values;
+
+    // Update colors based on theme
+    const isDark = document.body.classList.contains('dark');
+    performanceChart.options.scales.x.ticks.color = isDark ? '#94a3b8' : '#64748b';
+    performanceChart.options.scales.y.ticks.color = isDark ? '#94a3b8' : '#64748b';
+    performanceChart.options.scales.y.grid.color = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)';
+
+    performanceChart.update();
+}
+
+// ============================================
+// THEME (LIGHT / DARK)
+// ============================================
+
+function applyTheme(theme) {
+    const isDark = theme === 'dark';
+    document.body.classList.toggle('dark', isDark);
+    if (themeToggleBtn) {
+        themeToggleBtn.innerHTML = `<i class="fas fa-${isDark ? 'sun' : 'moon'}"></i>`;
+        themeToggleBtn.setAttribute(
+            'aria-label',
+            isDark ? 'Switch to light mode' : 'Switch to dark mode'
+        );
+    }
+}
+
+function toggleTheme() {
+    const current = document.body.classList.contains('dark') ? 'dark' : 'light';
+    const next = current === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    localStorage.setItem('theme', next);
+}
 
 // ============================================
 // AZURE TABLE STORAGE INTEGRATION
@@ -289,14 +437,14 @@ async function loadMonitoredUrlsFromAzure() {
                 'Pragma': 'no-cache'
             }
         });
-        
+
         if (!response.ok) {
             throw new Error(`Failed to load URLs: ${response.status}`);
         }
-        
+
         const urls = await response.json();
         console.log('Raw Azure response:', urls);
-        
+
         // Transform Azure entities - ALL URLs ARE ALWAYS ACTIVE NOW
         const monitoredUrls = urls.map(url => ({
             id: url.RowKey || generateId(),
@@ -318,10 +466,10 @@ async function loadMonitoredUrlsFromAzure() {
             lastStatusChange: null,
             lastError: null
         })).filter(url => url.deleted === 0);
-        
+
         console.log('Processed URLs:', monitoredUrls.length);
         return monitoredUrls;
-        
+
     } catch (error) {
         console.error('Error loading URLs from Azure:', error);
         throw error;
@@ -333,16 +481,16 @@ async function getUrlStatusFromAzure() {
     try {
         console.log('Fetching status from monitorlogs...');
         const response = await fetch(AZURE_API.getUrlStatus);
-        
+
         if (!response.ok) {
             throw new Error(`Failed to load URL status: ${response.status}`);
         }
-        
+
         const statusData = await response.json();
         console.log('Status data received:', statusData);
-        
+
         return statusData;
-        
+
     } catch (error) {
         console.error('Error loading URL status from Azure:', error);
         return {};
@@ -353,18 +501,18 @@ async function getUrlStatusFromAzure() {
 async function updateUrlStatusesFromAzure() {
     try {
         console.log('Updating URL statuses...');
-        
+
         // Get latest status for all URLs
         const statusData = await getUrlStatusFromAzure();
-        
+
         // Update each URL with its status from monitorlogs
         monitoredUrls.forEach(url => {
             // ALL URLs ARE ALWAYS CHECKED - NO PAUSE LOGIC
-            
+
             // Try to find status by URL
             const urlKey = url.url.toLowerCase().trim();
             let urlStatus = null;
-            
+
             // Look for status in different possible formats
             if (statusData[urlKey]) {
                 urlStatus = statusData[urlKey];
@@ -379,7 +527,7 @@ async function updateUrlStatusesFromAzure() {
                     }
                 }
             }
-            
+
             if (urlStatus) {
                 console.log(`Updating status for ${url.url}:`, urlStatus);
                 url.status = urlStatus.status?.toLowerCase() || 'unknown';
@@ -393,11 +541,11 @@ async function updateUrlStatusesFromAzure() {
                 url.status = 'unknown';
             }
         });
-        
+
         // Update UI
         updateUrlListUI();
         console.log('URL statuses updated successfully');
-        
+
     } catch (error) {
         console.error('Error updating URL statuses:', error);
         // Set all to unknown if error
@@ -411,16 +559,16 @@ async function updateUrlStatusesFromAzure() {
 async function saveUrlToAzure(urlData) {
     try {
         console.log('Saving URL to urlmonitorconfigs:', urlData);
-        
+
         const payload = {
             url: urlData.url,
             name: urlData.name || urlData.url,
             alertEmail: urlData.alertEmail || '',
             alertWhatsapp: urlData.alertWhatsapp || YOUR_PHONE_NUMBER,
         };
-        
+
         console.log("Sending to API:", JSON.stringify(payload));
-        
+
         const response = await fetch(AZURE_API.saveUrl, {
             method: 'POST',
             headers: {
@@ -428,22 +576,22 @@ async function saveUrlToAzure(urlData) {
             },
             body: JSON.stringify(payload)
         });
-        
+
         if (!response.ok) {
             const errorText = await response.text();
             console.error('HTTP Error:', response.status, errorText);
             throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
-        
+
         const result = await response.json();
         console.log('Save response:', result);
-        
+
         if (!result.success) {
             throw new Error(result.error || 'Failed to save URL');
         }
-        
+
         return result.rowKey || result.id;
-        
+
     } catch (error) {
         console.error('Error saving URL to Azure:', error);
         throw error;
@@ -454,20 +602,20 @@ async function saveUrlToAzure(urlData) {
 async function deleteUrlFromAzure(urlId) {
     try {
         console.log('Deleting URL from Azure:', urlId);
-        
+
         const response = await fetch(`${AZURE_API.deleteUrl}/${urlId}`, {
             method: 'DELETE'
         });
-        
+
         const result = await response.json();
         console.log('Delete response:', result);
-        
+
         if (!result.success) {
             throw new Error(result.error || 'Failed to delete URL');
         }
-        
+
         return true;
-        
+
     } catch (error) {
         console.error('Error deleting URL from Azure:', error);
         throw error;
@@ -478,7 +626,7 @@ async function deleteUrlFromAzure(urlId) {
 async function updateUrlInAzure(urlId, updates) {
     try {
         console.log('Updating URL in Azure:', urlId, updates);
-        
+
         const response = await fetch(`${AZURE_API.updateUrl}/${urlId}`, {
             method: 'PUT',
             headers: {
@@ -490,16 +638,16 @@ async function updateUrlInAzure(urlId, updates) {
                 ...updates
             })
         });
-        
+
         const result = await response.json();
         console.log('Update response:', result);
-        
+
         if (!result.success) {
             throw new Error(result.error || 'Failed to update URL');
         }
-        
+
         return true;
-        
+
     } catch (error) {
         console.error('Error updating URL in Azure:', error);
         throw error;
@@ -510,7 +658,7 @@ async function updateUrlInAzure(urlId, updates) {
 async function testSingleUrlAzure(urlId, url) {
     try {
         console.log('Testing URL via Azure Function:', url);
-        
+
         const response = await fetch(AZURE_API.testUrl, {
             method: 'POST',
             headers: {
@@ -521,12 +669,12 @@ async function testSingleUrlAzure(urlId, url) {
                 testNow: true
             })
         });
-        
+
         const result = await response.json();
         console.log('Test response:', result);
-        
+
         return result;
-        
+
     } catch (error) {
         console.error('Error testing URL via Azure:', error);
         throw error;
@@ -535,7 +683,7 @@ async function testSingleUrlAzure(urlId, url) {
 
 // Helper function to generate GUID for Azure Table
 function generateGuid() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
         const r = Math.random() * 16 | 0;
         const v = c === 'x' ? r : (r & 0x3 | 0x8);
         return v.toString(16);
@@ -549,21 +697,21 @@ function generateGuid() {
 async function initializeUrlManagement() {
     try {
         console.log('Initializing URL management...');
-        
+
         // Load all URLs - ALL ARE ACTIVE
         monitoredUrls = await loadMonitoredUrlsFromAzure();
         console.log(`Loaded ${monitoredUrls.length} URLs from urlmonitorconfigs table`);
-        
+
         // Get initial status from monitorlogs
         await updateUrlStatusesFromAzure();
-        
+
     } catch (error) {
         // Fallback to localStorage if Azure fails
         console.error('Azure load failed, using localStorage:', error);
         monitoredUrls = loadFromLocalStorage();
         showToast('Connected to local storage. Azure connection failed.', 'warning');
     }
-    
+
     updateUrlListUI();
 }
 
@@ -591,7 +739,7 @@ function generateId() {
 
 function updateUrlListUI() {
     if (!urlListBody) return;
-    
+
     if (monitoredUrls.length === 0) {
         urlListBody.innerHTML = `
             <tr>
@@ -606,20 +754,20 @@ function updateUrlListUI() {
                     </button>
                 </td>
             </tr>`;
-        
+
         document.getElementById('addFirstUrlBtn')?.addEventListener('click', openAddUrlModal);
         return;
     }
-    
+
     let html = '';
     monitoredUrls.forEach(url => {
         const statusBadge = getUrlStatusBadge(url.status);
-        const lastChecked = url.lastChecked ? 
+        const lastChecked = url.lastChecked ?
             formatTime(url.lastChecked).date + ' ' + formatTime(url.lastChecked).clock : 'Never';
-        
+
         // Calculate uptime color
         const uptimeValue = parseFloat(url.uptime) || 100;
-        
+
         html += `
             <tr>
                 <td>
@@ -682,9 +830,9 @@ function updateUrlListUI() {
             </tr>
         `;
     });
-    
+
     urlListBody.innerHTML = html;
-    
+
     // Add event listeners to URL action buttons
     document.querySelectorAll('.btn-test').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -693,21 +841,21 @@ function updateUrlListUI() {
             testSingleUrl(urlId, url);
         });
     });
-    
+
     document.querySelectorAll('.btn-edit').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const urlId = e.currentTarget.getAttribute('data-url-id');
             editUrl(urlId);
         });
     });
-    
+
     document.querySelectorAll('.btn-delete').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const urlId = e.currentTarget.getAttribute('data-url-id');
             openDeleteModal(urlId);
         });
     });
-    
+
     // REMOVED: Status toggle event listeners
 }
 
@@ -718,7 +866,7 @@ function getUptimeColor(uptime) {
 }
 
 function getUrlStatusBadge(status) {
-    switch(status.toLowerCase()) {
+    switch (status.toLowerCase()) {
         case 'up':
         case 'active':
         case 'healthy':
@@ -745,13 +893,13 @@ function startUrlStatusRefresher() {
     if (urlStatusRefreshInterval) {
         clearInterval(urlStatusRefreshInterval);
     }
-    
+
     // Refresh every 30 seconds to get updates from Azure function
     urlStatusRefreshInterval = setInterval(async () => {
         console.log('Auto-refreshing URL statuses...');
         await updateUrlStatusesFromAzure();
     }, 30000); // 30 seconds
-    
+
     console.log('Started URL status refresher (30s interval)');
 }
 
@@ -783,7 +931,7 @@ function closeEditUrlModal() {
 function openDeleteModal(urlId) {
     const urlObj = monitoredUrls.find(u => u.id === urlId);
     if (!urlObj) return;
-    
+
     currentDeletingUrlId = urlId;
     deleteUrlText.textContent = `${urlObj.name || truncateText(urlObj.url, 50)}`;
     deleteUrlModal.style.display = 'flex';
@@ -800,36 +948,36 @@ async function addNewUrl() {
     const name = urlName.value.trim();
     const email = alertEmail.value.trim();
     const whatsapp = alertWhatsapp.value.trim();
-    
+
     if (!url) {
         showToast('Please enter a URL');
         return;
     }
-    
+
     // Validate URL format
     const validation = validateURL(url);
     if (!validation.isValid) {
         showToast(`Invalid URL: ${validation.message}`);
         return;
     }
-    
+
     let validatedUrl = validation.url;
-    
+
     const newUrl = {
         url: validatedUrl,
         name: name || validatedUrl,
         alertEmail: email,
         alertWhatsapp: whatsapp || YOUR_PHONE_NUMBER
     };
-    
+
     try {
         // Show loading state
         addUrlSubmitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
         addUrlSubmitBtn.disabled = true;
-        
+
         // Save to urlmonitorconfigs table
         const azureId = await saveUrlToAzure(newUrl);
-        
+
         // Create local object with Azure ID
         const localUrl = {
             id: azureId,
@@ -846,15 +994,15 @@ async function addNewUrl() {
             checkInterval: 300,
             azureSaved: true
         };
-        
+
         // Add to local array
         monitoredUrls.push(localUrl);
-        
+
         showToast(`Added ${name || validatedUrl} for monitoring. Azure function will check every 5 minutes.`);
-        
+
         // Refresh status immediately
         await updateUrlStatusesFromAzure();
-        
+
     } catch (error) {
         // Azure failed, use localStorage only
         console.error('Azure save failed:', error);
@@ -873,17 +1021,17 @@ async function addNewUrl() {
             checkInterval: 300,
             azureSaved: false
         };
-        
+
         monitoredUrls.push(newLocalUrl);
         saveToLocalStorage();
-        
+
         showToast(`Added to local storage (cloud save failed): ${name || validatedUrl}`, 'warning');
     } finally {
         // Reset button
         addUrlSubmitBtn.innerHTML = '<i class="fas fa-plus"></i> Add URL';
         addUrlSubmitBtn.disabled = false;
     }
-    
+
     updateUrlListUI();
     closeAddUrlModal();
 }
@@ -892,36 +1040,39 @@ async function addNewUrl() {
 async function testSingleUrl(urlId, url) {
     const urlObj = monitoredUrls.find(u => u.id === urlId);
     if (!urlObj) return;
-    
+
     // Update status to checking
     urlObj.status = 'checking';
     updateUrlListUI();
-    
+
     try {
         // Option 1: Use Azure Function to test
         const azureResult = await testSingleUrlAzure(urlId, url);
-        
+
         if (azureResult.success) {
             urlObj.status = azureResult.status;
             urlObj.lastChecked = new Date().toISOString();
             urlObj.lastResponseTime = azureResult.responseTime;
             urlObj.lastError = azureResult.error || null;
             
+            // Re-fetch historical data from DB instead of optimistic insertion
+            refreshData();
+
             showToast(`Tested ${urlObj.name || urlObj.url}: ${azureResult.status.toUpperCase()} (${azureResult.responseTime}ms)`);
         } else {
             throw new Error(azureResult.error);
         }
-        
+
     } catch (azureError) {
         console.error('Azure test failed, falling back to frontend test:', azureError);
-        
+
         // Option 2: Fallback to frontend test
         const startTime = Date.now();
-        
+
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000);
-            
+
             let response;
             try {
                 response = await fetch(url, {
@@ -939,34 +1090,39 @@ async function testSingleUrl(urlId, url) {
                     cache: 'no-cache'
                 });
             }
-            
+
             clearTimeout(timeoutId);
-            
+
             const responseTime = Date.now() - startTime;
-            
+
             urlObj.status = 'up';
             urlObj.lastChecked = new Date().toISOString();
             urlObj.lastResponseTime = responseTime;
             urlObj.lastError = null;
-            
+
+            // Optional optimistic refresh
+            refreshData();
+
             showToast(`Tested ${urlObj.name || urlObj.url}: UP (${responseTime}ms)`);
-            
+
         } catch (error) {
             console.error(`Error checking URL ${url}:`, error);
             urlObj.status = 'down';
             urlObj.lastChecked = new Date().toISOString();
             urlObj.lastStatusChange = new Date().toISOString();
             urlObj.lastError = error.message;
-            
+
+            refreshData();
+
             showToast(`Tested ${urlObj.name || urlObj.url}: DOWN - ${error.message}`);
         }
     }
-    
+
     // Save to localStorage if not using Azure
     if (!urlObj.azureSaved) {
         saveToLocalStorage();
     }
-    
+
     updateUrlListUI();
 }
 
@@ -980,17 +1136,17 @@ function refreshAllUrls() {
 function editUrl(urlId) {
     const urlObj = monitoredUrls.find(u => u.id === urlId);
     if (!urlObj) return;
-    
+
     currentEditingUrlId = urlId;
-    
+
     editUrlInput.value = urlObj.url;
     editUrlName.value = urlObj.name || '';
     editAlertEmail.value = urlObj.alertEmail || '';
     editAlertWhatsapp.value = urlObj.alertWhatsapp || '';
     editUrlId.value = urlId;
-    
+
     // REMOVED: Active toggle in edit modal
-    
+
     openEditUrlModal();
 }
 
@@ -1001,28 +1157,28 @@ async function saveUrlChanges() {
     const name = editUrlName.value.trim();
     const email = editAlertEmail.value.trim();
     const whatsapp = editAlertWhatsapp.value.trim();
-    
+
     if (!url) {
         showToast('Please enter a URL');
         return;
     }
-    
+
     const urlIndex = monitoredUrls.findIndex(u => u.id === urlId);
     if (urlIndex === -1) return;
-    
+
     // Validate URL format
     let validatedUrl = url;
     if (!validatedUrl.startsWith('http://') && !validatedUrl.startsWith('https://')) {
         validatedUrl = 'https://' + validatedUrl;
     }
-    
+
     try {
         new URL(validatedUrl);
     } catch (e) {
         showToast('Please enter a valid URL');
         return;
     }
-    
+
     // Prepare updates (NO IsActive)
     const updates = {
         Name: name,
@@ -1031,7 +1187,7 @@ async function saveUrlChanges() {
         AlertWhatsapp: whatsapp
         // REMOVED: IsActive
     };
-    
+
     // Update in Azure if it was saved there
     const urlObj = monitoredUrls[urlIndex];
     if (urlObj.azureSaved !== false) {
@@ -1042,38 +1198,38 @@ async function saveUrlChanges() {
             urlObj.azureSaved = false;
         }
     }
-    
+
     // Update locally
     monitoredUrls[urlIndex].url = validatedUrl;
     monitoredUrls[urlIndex].name = name;
     monitoredUrls[urlIndex].alertEmail = email;
     monitoredUrls[urlIndex].alertWhatsapp = whatsapp;
     // REMOVED: IsActive update
-    
+
     if (urlObj.azureSaved === false) {
         saveToLocalStorage();
     }
-    
+
     updateUrlListUI();
     closeEditUrlModal();
-    
+
     showToast('URL updated successfully.');
 }
 
 // Delete URL with Azure integration
 async function confirmDeleteUrl() {
     if (!currentDeletingUrlId) return;
-    
+
     const urlIndex = monitoredUrls.findIndex(u => u.id === currentDeletingUrlId);
     if (urlIndex === -1) return;
-    
+
     const urlObj = monitoredUrls[urlIndex];
-    
+
     try {
         // Show loading
         confirmDeleteUrlBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting...';
         confirmDeleteUrlBtn.disabled = true;
-        
+
         // Try to delete from Azure if it was saved there
         if (urlObj.azureSaved !== false) {
             await deleteUrlFromAzure(currentDeletingUrlId);
@@ -1085,18 +1241,18 @@ async function confirmDeleteUrl() {
         confirmDeleteUrlBtn.innerHTML = '<i class="fas fa-trash"></i> Delete';
         confirmDeleteUrlBtn.disabled = false;
     }
-    
+
     // Mark as deleted locally
     urlObj.deleted = 1;
     if (urlObj.azureSaved === false) {
         saveToLocalStorage();
     }
-    
+
     // Remove from display
     monitoredUrls.splice(urlIndex, 1);
     updateUrlListUI();
     closeDeleteUrlModal();
-    
+
     showToast(`Removed ${urlObj.name || urlObj.url} from monitoring`);
     addWhatsAppMessage('system', `🗑️ Removed URL from monitoring: ${urlObj.url}`);
 }
@@ -1106,17 +1262,17 @@ function testAllServers() {
     // Test ALL URLs (no filtering)
     if (monitoredUrls.length > 0) {
         showToast(`Running health check on ${monitoredUrls.length} URLs...`);
-        
+
         monitoredUrls.forEach((url, index) => {
             setTimeout(() => {
                 testSingleUrl(url.id, url.url);
             }, index * 2000); // 2 second delay between tests
         });
-        
+
         setTimeout(() => {
             showToast('Health check completed');
             addWhatsAppMessage('system', '🔄 Health check completed for all URLs.');
-            
+
             // Refresh status from Azure
             updateUrlStatusesFromAzure();
         }, monitoredUrls.length * 2000 + 2000);
@@ -1126,8 +1282,36 @@ function testAllServers() {
 }
 
 // ============================================
-// UTILITY FUNCTIONS
-// ============================================
+// ===== Utility Functions =====
+function parseTimestamp(timestamp) {
+    if (!timestamp) return null;
+
+    try {
+        // Example: "2026-03-08 05:23:07 PM"
+        const [datePart, timePart, period] = timestamp.split(" ");
+
+        const [hours, minutes, seconds] = timePart.split(":").map(Number);
+
+        let hours24 = hours;
+
+        if (period === "PM" && hours < 12) {
+            hours24 = hours + 12;
+        }
+
+        if (period === "AM" && hours === 12) {
+            hours24 = 0;
+        }
+
+        const isoString = `${datePart}T${hours24
+            .toString()
+            .padStart(2, "0")}:${minutes}:${seconds}`;
+
+        return new Date(isoString);
+    } catch (e) {
+        console.error("Timestamp parse error:", timestamp);
+        return null;
+    }
+}
 
 function truncateText(text, maxLength) {
     if (!text) return '--';
@@ -1144,7 +1328,7 @@ function ensureHttp(url) {
 
 function showLoading(show) {
     if (!tableBody) return;
-    
+
     if (show) {
         tableBody.innerHTML = `
             <tr>
@@ -1158,7 +1342,7 @@ function showLoading(show) {
 
 function showError(message) {
     if (!tableBody) return;
-    
+
     tableBody.innerHTML = `
         <tr>
             <td colspan="7" class="loading">
@@ -1169,17 +1353,17 @@ function showError(message) {
                 </button>
             </td>
         </tr>`;
-    
+
     document.getElementById('loadSampleDataBtn')?.addEventListener('click', loadSampleData);
 }
 
 function updateApiStatus(status) {
     if (!apiStatus) return;
-    
+
     const icon = apiStatus.querySelector('i');
     const text = apiStatus.querySelector('span');
-    
-    switch(status) {
+
+    switch (status) {
         case 'connected':
             apiStatus.className = 'api-status status-connected';
             icon.className = 'fas fa-check-circle';
@@ -1209,21 +1393,21 @@ function showToast(message, type = 'success') {
     if (existingToast) {
         existingToast.remove();
     }
-    
+
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    
+
     let icon = 'fa-check-circle';
     if (type === 'warning') icon = 'fa-exclamation-triangle';
     if (type === 'error') icon = 'fa-times-circle';
-    
+
     toast.innerHTML = `
         <i class="fas ${icon}"></i>
         ${message}
     `;
-    
+
     document.body.appendChild(toast);
-    
+
     setTimeout(() => {
         toast.style.animation = 'slideOut 0.3s ease-out';
         setTimeout(() => {
@@ -1236,7 +1420,7 @@ function showToast(message, type = 'success') {
 
 function updateButtonStates(todayMode) {
     if (!todayBtn || !allBtn) return;
-    
+
     if (todayMode) {
         todayBtn.className = 'btn btn-primary';
         allBtn.className = 'btn btn-outline';
@@ -1249,7 +1433,7 @@ function updateButtonStates(todayMode) {
 // Sample data as fallback
 function loadSampleData() {
     console.log('Loading sample data as fallback...');
-    
+
     const now = new Date();
     const sampleData = [
         {
@@ -1271,7 +1455,7 @@ function loadSampleData() {
             recipient: 'Support Team'
         }
     ];
-    
+
     currentData = sampleData;
     populateTable(currentData);
     updateStats(currentData);
@@ -1285,8 +1469,15 @@ function loadSampleData() {
 
 function populateTable(data) {
     if (!tableBody) return;
-    
-    if (!data || data.length === 0) {
+
+    // Filter out "UP" records so only downtime is shown
+    const downtimeData = (data || []).filter(row => {
+        const isUp = row.status === 'UP' || row.status === 'up';
+        const callInitiated = row.call_initiated === 'YES';
+        return !isUp || callInitiated;
+    });
+
+    if (!downtimeData || downtimeData.length === 0) {
         tableBody.innerHTML = `
             <tr>
                 <td colspan="7" class="loading">
@@ -1296,18 +1487,20 @@ function populateTable(data) {
             </tr>`;
         return;
     }
-    
+
     let html = '';
-    data.forEach((row) => {
+    downtimeData.forEach((row) => {
         const timestamp = row.timestamp || '';
         const url = row.url || 'Unknown';
         const callInitiated = row.call_initiated || 'NO';
         const recipient = row.recipient || '--';
-        
+
         const time = formatTime(timestamp);
-        const status = callInitiated === 'YES' ? 'down' : 'up';
+        // Rely purely on the row.status instead of callInitiated
+        const isUp = row.status === 'UP' || row.status === 'up';
+        const status = isUp ? 'up' : 'down';
         const duration = calculateDuration(timestamp);
-        
+
         html += `
             <tr>
                 <td>
@@ -1327,9 +1520,9 @@ function populateTable(data) {
                 </td>
                 <td>${duration}</td>
                 <td>
-                    ${callInitiated === 'YES' ? 
-                        '<i class="fas fa-check-circle" style="color: #10b981;"></i> Yes' : 
-                        '<i class="fas fa-times-circle" style="color: #6b7280;"></i> No'}
+                    ${callInitiated === 'YES' ?
+                '<i class="fas fa-check-circle" style="color: #10b981;"></i> Yes' :
+                '<i class="fas fa-times-circle" style="color: #6b7280;"></i> No'}
                 </td>
                 <td>${recipient}</td>
                 <td>
@@ -1340,9 +1533,9 @@ function populateTable(data) {
             </tr>
         `;
     });
-    
+
     tableBody.innerHTML = html;
-    
+
     document.querySelectorAll('.resend-alert-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const url = e.currentTarget.getAttribute('data-url');
@@ -1358,7 +1551,7 @@ function formatTime(timestamp) {
         // Check if timestamp is in ISO format (has 'T' and 'Z')
         if (timestamp.includes('T') && timestamp.includes('Z')) {
             const date = new Date(timestamp);
-            
+
             return {
                 date: date.toLocaleDateString('en-IN', {
                     day: '2-digit',
@@ -1372,28 +1565,28 @@ function formatTime(timestamp) {
                 })
             };
         }
-        
+
         // Handle the existing format (with AM/PM)
         const [datePart, timePart, period] = timestamp.split(' ');
-        
+
         if (!datePart || !timePart) {
             console.log("Invalid timestamp format:", timestamp);
             return { date: '--', clock: '--' };
         }
-        
+
         const [hours, minutes, seconds] = timePart.split(':').map(Number);
-        
+
         let hours24 = hours;
         if (period === 'PM' && hours < 12) {
             hours24 = hours + 12;
         } else if (period === 'AM' && hours === 12) {
             hours24 = 0;
         }
-        
+
         const isoString = `${datePart}T${hours24.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-        
+
         const date = new Date(isoString);
-        
+
         if (isNaN(date.getTime())) {
             console.log("Failed to parse date:", timestamp);
             return { date: '--', clock: '--' };
@@ -1420,37 +1613,37 @@ function formatTime(timestamp) {
 
 function calculateDuration(timestamp) {
     if (!timestamp) return '--';
-    
+
     try {
         let then;
         if (timestamp.includes('AM') || timestamp.includes('PM')) {
             const [datePart, timePart, period] = timestamp.split(' ');
             if (!datePart || !timePart || !period) return '--';
-            
+
             const [hours, minutes, seconds] = timePart.split(':').map(Number);
-            
+
             let hours24 = hours;
             if (period === 'PM' && hours < 12) {
                 hours24 = hours + 12;
             } else if (period === 'AM' && hours === 12) {
                 hours24 = 0;
             }
-            
+
             const isoString = `${datePart}T${hours24.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
             then = new Date(isoString);
         } else {
             then = new Date(timestamp);
         }
-        
+
         const now = new Date();
-        
+
         if (isNaN(then.getTime())) {
             return '--';
         }
-        
+
         const diff = now - then;
         const minutes = Math.floor(diff / 60000);
-        
+
         if (minutes < 60) {
             return `${minutes}m`;
         } else {
@@ -1467,46 +1660,46 @@ function calculateDuration(timestamp) {
 function updateStats(data) {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
+
     const todayCount = data.filter(d => {
         try {
             const timestamp = d.timestamp;
             if (!timestamp) return false;
-            
+
             let date;
             if (timestamp.includes('AM') || timestamp.includes('PM')) {
                 const [datePart, timePart, period] = timestamp.split(' ');
                 if (!datePart || !timePart || !period) return false;
-                
+
                 const [hours, minutes, seconds] = timePart.split(':').map(Number);
-                
+
                 let hours24 = hours;
                 if (period === 'PM' && hours < 12) {
                     hours24 = hours + 12;
                 } else if (period === 'AM' && hours === 12) {
                     hours24 = 0;
                 }
-                
+
                 const isoString = `${datePart}T${hours24.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
                 date = new Date(isoString);
             } else {
                 date = new Date(timestamp);
             }
-            
+
             return date >= todayStart;
         } catch (error) {
             console.error('Error parsing date in updateStats:', error);
             return false;
         }
     }).length;
-    
+
     const alertsCount = data.filter(d => {
         return d.call_initiated === 'YES';
     }).length;
-    
+
     const uptimePercentValue = todayCount === 0 ? 100 : Math.max(95, 100 - (todayCount * 2));
     const avgResponseValue = Math.floor(Math.random() * 100) + 50;
-    
+
     if (uptimePercent) uptimePercent.textContent = `${uptimePercentValue.toFixed(2)}%`;
     if (todayIncidents) todayIncidents.textContent = todayCount;
     if (avgResponse) avgResponse.textContent = `${avgResponseValue}ms`;
@@ -1519,52 +1712,52 @@ function updateStats(data) {
 
 function validateURL(url) {
     if (!url) return { isValid: false, message: 'URL is required' };
-    
+
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
         return { isValid: false, message: 'URL must start with http:// or https://' };
     }
-    
+
     try {
         const urlObj = new URL(url);
         const hostname = urlObj.hostname;
-        
+
         if (hostname === 'localhost') {
-            return { 
-                isValid: true, 
-                message: 'Localhost URL', 
+            return {
+                isValid: true,
+                message: 'Localhost URL',
                 url: url,
-                isLocal: true 
+                isLocal: true
             };
         }
-        
+
         const domainPattern = /^([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$/i;
-        
+
         if (!domainPattern.test(hostname)) {
             const ipPattern = /^(\d{1,3}\.){3}\d{1,3}$/;
             if (!ipPattern.test(hostname)) {
-                return { 
-                    isValid: false, 
-                    message: 'Invalid domain or IP address format' 
+                return {
+                    isValid: false,
+                    message: 'Invalid domain or IP address format'
                 };
             }
-            
+
             const ipParts = hostname.split('.').map(Number);
             if (ipParts.some(part => part < 0 || part > 255)) {
                 return { isValid: false, message: 'Invalid IP address' };
             }
         }
-        
-        return { 
-            isValid: true, 
-            message: 'Valid URL format', 
+
+        return {
+            isValid: true,
+            message: 'Valid URL format',
             url: url,
-            isLocal: false 
+            isLocal: false
         };
-        
+
     } catch (error) {
-        return { 
-            isValid: false, 
-            message: 'Invalid URL format. Example: https://example.com' 
+        return {
+            isValid: false,
+            message: 'Invalid URL format. Example: https://example.com'
         };
     }
 }
@@ -1578,29 +1771,29 @@ function generateReport() {
         showToast('No data available to generate report');
         return;
     }
-    
+
     showToast('Generating PDF report...');
-    
+
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
-    
+
     doc.setFontSize(20);
     doc.text('ServerWatch Pro - Uptime Report', 20, 20);
-    
+
     doc.setFontSize(12);
     const now = new Date();
-    doc.text(`Generated: ${now.toLocaleDateString('en-IN', { 
-        weekday: 'long', 
-        year: 'numeric', 
-        month: 'long', 
+    doc.text(`Generated: ${now.toLocaleDateString('en-IN', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
         day: 'numeric',
         hour: '2-digit',
         minute: '2-digit'
     })}`, 20, 30);
-    
+
     doc.setFontSize(14);
     doc.text('Summary Statistics', 20, 45);
-    
+
     doc.setFontSize(11);
     doc.text(`• Uptime: ${document.getElementById('uptimePercent').textContent}`, 25, 55);
     doc.text(`• Today's Incidents: ${document.getElementById('todayIncidents').textContent}`, 25, 62);
@@ -1609,10 +1802,10 @@ function generateReport() {
     doc.text(`• Total Records: ${currentData.length}`, 25, 83);
     doc.text(`• Monitored URLs: ${monitoredUrls.length}`, 25, 90);
     doc.text(`• Active URLs: ${monitoredUrls.length}`, 25, 97); // ALL URLs ARE ACTIVE
-    
+
     doc.setFontSize(14);
     doc.text('Downtime Incidents', 20, 112);
-    
+
     const tableData = currentData.map(item => {
         const timestamp = item.timestamp || '';
         const url = item.url || 'Unknown';
@@ -1621,7 +1814,7 @@ function generateReport() {
         const time = formatTime(timestamp);
         const status = callInitiated === 'YES' ? 'DOWN' : 'UP';
         const duration = calculateDuration(timestamp);
-        
+
         return [
             time.date + ' ' + time.clock,
             truncateText(url, 25),
@@ -1631,7 +1824,7 @@ function generateReport() {
             recipient
         ];
     });
-    
+
     doc.autoTable({
         startY: 117,
         head: [['Time', 'Service', 'Status', 'Duration', 'Alert Sent', 'Recipient']],
@@ -1641,7 +1834,7 @@ function generateReport() {
         margin: { left: 20 },
         styles: { fontSize: 9 }
     });
-    
+
     const pageCount = doc.internal.getNumberOfPages();
     for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
@@ -1649,10 +1842,10 @@ function generateReport() {
         doc.text('Confidential - ServerWatch Pro Report', 20, doc.internal.pageSize.height - 10);
         doc.text(`Page ${i} of ${pageCount}`, doc.internal.pageSize.width - 40, doc.internal.pageSize.height - 10);
     }
-    
+
     const filename = `serverwatch-report-${now.toISOString().split('T')[0]}.pdf`;
     doc.save(filename);
-    
+
     showToast('Report downloaded successfully');
     addWhatsAppMessage('system', '📄 PDF report generated and downloaded.');
 }
@@ -1664,7 +1857,7 @@ function generateReport() {
 function openWhatsAppModal() {
     whatsappModal.style.display = 'block';
     updateWhatsAppUI();
-    
+
     setTimeout(() => {
         whatsappInput.focus();
     }, 100);
@@ -1676,19 +1869,19 @@ function closeWhatsAppModal() {
 
 function sendWhatsAppMessage() {
     const message = whatsappInput.value.trim();
-    
+
     if (!message) return;
-    
+
     whatsAppMessages.push({
         sender: 'user',
         text: message,
         time: new Date()
     });
-    
+
     whatsappInput.value = '';
     localStorage.setItem('whatsapp_chat', JSON.stringify(whatsAppMessages));
     updateWhatsAppUI();
-    
+
     setTimeout(() => {
         const reply = generateAutoReply(message);
         whatsAppMessages.push({
@@ -1696,14 +1889,14 @@ function sendWhatsAppMessage() {
             text: reply,
             time: new Date()
         });
-        
+
         localStorage.setItem('whatsapp_chat', JSON.stringify(whatsAppMessages));
         updateWhatsAppUI();
-        
-        if (message.toLowerCase().includes('contact') || 
+
+        if (message.toLowerCase().includes('contact') ||
             message.toLowerCase().includes('call') ||
             message.toLowerCase().includes('whatsapp')) {
-            
+
             setTimeout(() => {
                 openActualWhatsApp();
             }, 1500);
@@ -1719,12 +1912,12 @@ function handleWhatsAppKeyPress(event) {
 
 function updateWhatsAppUI() {
     if (!whatsappMessages) return;
-    
+
     let html = '';
     whatsAppMessages.forEach(msg => {
         const time = formatWhatsAppTime(msg.time);
         const messageClass = msg.sender === 'user' ? 'message-outgoing' : 'message-incoming';
-        
+
         html += `
             <div class="whatsapp-message ${messageClass}">
                 ${msg.text.replace(/\n/g, '<br>')}
@@ -1734,14 +1927,14 @@ function updateWhatsAppUI() {
             </div>
         `;
     });
-    
+
     whatsappMessages.innerHTML = html;
     whatsappMessages.scrollTop = whatsappMessages.scrollHeight;
 }
 
 function generateAutoReply(message) {
     const lowerMsg = message.toLowerCase();
-    
+
     if (lowerMsg.includes('hello') || lowerMsg.includes('hi')) {
         return 'Hello! How can I assist you with server monitoring?';
     } else if (lowerMsg.includes('status') || lowerMsg.includes('how are')) {
@@ -1751,7 +1944,7 @@ function generateAutoReply(message) {
             const recentIncidents = currentData
                 .filter(d => d.call_initiated === 'YES')
                 .slice(0, 3);
-            
+
             if (recentIncidents.length > 0) {
                 return `Recent incidents:\n${recentIncidents.map(d => {
                     const url = d.url || 'Unknown';
@@ -1777,13 +1970,13 @@ function openActualWhatsApp() {
     const defaultMessage = `Hi ${YOUR_NAME}, I need help with server monitoring. Current status: ${document.getElementById('uptimePercent').textContent} uptime, ${document.getElementById('todayIncidents').textContent} incidents today.`;
     const whatsappUrl = `https://wa.me/${YOUR_PHONE_NUMBER}?text=${encodeURIComponent(defaultMessage)}`;
     window.open(whatsappUrl, '_blank');
-    
+
     whatsAppMessages.push({
         sender: 'system',
         text: `📱 I've opened WhatsApp for you. Please continue the conversation there.`,
         time: new Date()
     });
-    
+
     updateWhatsAppUI();
     localStorage.setItem('whatsapp_chat', JSON.stringify(whatsAppMessages));
 }
@@ -1791,7 +1984,7 @@ function openActualWhatsApp() {
 function formatWhatsAppTime(date) {
     const now = new Date();
     const msgTime = new Date(date);
-    
+
     if (now.toDateString() === msgTime.toDateString()) {
         return msgTime.toLocaleTimeString('en-IN', {
             hour12: true,
@@ -1813,7 +2006,7 @@ function formatWhatsAppTime(date) {
 
 function resendAlert(url) {
     showToast(`Resending alert for ${url}...`);
-    
+
     setTimeout(() => {
         showToast('Alert resent successfully');
     }, 1000);
@@ -1824,24 +2017,24 @@ function exportCSV() {
         showToast('No data to export');
         return;
     }
-    
+
     let csv = 'Timestamp,URL,Alert Sent,Recipient\n';
     currentData.forEach(row => {
         const timestamp = row.timestamp || '';
         const url = row.url || 'Unknown';
         const callInitiated = row.call_initiated || 'NO';
         const recipient = row.recipient || '';
-        
+
         csv += `"${timestamp}","${url}","${callInitiated}","${recipient}"\n`;
     });
-    
+
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
     link.download = `downtime-export-${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
-    
+
     showToast('CSV exported successfully');
     addWhatsAppMessage('system', '📊 Data exported to CSV file.');
 }
@@ -1857,10 +2050,10 @@ function addWhatsAppMessage(sender, text) {
         text: text,
         time: new Date()
     });
-    
+
     if (whatsappModal.style.display === 'block') {
         updateWhatsAppUI();
     }
-    
+
     localStorage.setItem('whatsapp_chat', JSON.stringify(whatsAppMessages));
 }
